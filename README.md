@@ -1,6 +1,16 @@
+
 # SSL Admin Tasks
 
 This doc consists of all the tasks i have done, and the step by step process and documentation of each task.
+
+Optional tasks at the end.
+
+Future implementations that can be done:
+
+1) Jenkins automation for my personal portfolio website.
+2) Prevent the server from DDOS attacks
+3) Host my main project in this VM
+
 
 ## Task 1 (Initial Setup)
 
@@ -225,10 +235,10 @@ This doc consists of all the tasks i have done, and the step by step process and
 
             - Log in as sudo user
             - cd /etc/nginx/sites-available
-            - nano sanin_ssl
+            - nano blest.sslnitc.site
                 server {
 	                    listen 80;
-	                    server_name sanin_ssl.com;
+	                    server_name blest.sslnitc.site;
 	                    location /server1/ {
 		                    proxy_pass http://localhost:8008/server1/;
 	                    }       
@@ -239,7 +249,7 @@ This doc consists of all the tasks i have done, and the step by step process and
 		                    proxy_pass http://localhost:3000/sslopen/;
 	                    }   
                 }
-            - configure ssl certificate using certbot
+            - configure ssl certificate using certbot (for nginx)
             - sudo ln -s /etc/nginx/sites-available/sanin_ssl /etc/nginx/sites-enabled/
             - cd /etc/nginx/sites-enabled
             - sudo rm default
@@ -433,9 +443,11 @@ This doc consists of all the tasks i have done, and the step by step process and
 ### 1) Ansible Setup and Basics:
 
             - docker create network ansible-net
-            - docker run -itd --name ansible_control --network ansible_net ubuntu /bin/bash
-            - docker run -itd --name ansible_target_1 --network ansible_net ubuntu /bin/bash
-            - docker run -itd --name ansible_target_2 --network ansible_net ubuntu /bin/bash
+            - docker run -itd --name ansible_control --network ansible-net ubuntu /bin/bash
+            - docker run -itd --name ansible_target_1 --cap-add=NET_ADMIN --network ansible-net ubuntu /bin/bash
+            - docker run -itd --name ansible_target_2 --cap-add=NET_ADMIN --network ansible-net ubuntu /bin/bash
+
+            - (Note that NET_ADMIN capability is needed for modifying ufw firewall rules in target containers or it will cause permission issue, i had to stop the container and commit the changes of the containers to a new image and then restarted the container with NET_ADMIN capability)
 
             - docker attach ansible_control (gets inside the ansible_control container)
 
@@ -504,4 +516,251 @@ This doc consists of all the tasks i have done, and the step by step process and
                 (For further tasks , i created a new user in the two containers and also installed ssh keys and copied them) 
                 (this was done to check the working of the comprehensive playbook made)
 
+### 2) Lab Configuration Management:
+
                 - vi comp_playbook.yml
+
+                    ---
+                    
+                    - name: Comprehensive Playbook
+                    become: true
+                    hosts: targets
+                    vars_files: 
+                        - vars/comp_vars.yml
+
+
+                    tasks: 
+                    - name: Install Packages
+                        apt:
+                        name: "{{ item }}"
+                        state: present #ensures the packages are installed
+                        #update_cache: yes #to update package index before installing
+                        loop: "{{ packages }}"
+
+                    - name: Bash aliases
+                        lineinfile:
+                        path: /etc/bash.bashrc
+                        line: "{{ item }}"
+                        create: yes
+                        loop:
+                        - 'alias ..="cd .."'
+                        - 'alias tx="tmux"'
+
+                    - name: Vim settings
+                        lineinfile:
+                        path: /etc/vim/vimrc
+                        line: "{{ item }}"
+                        create: yes
+                        loop:
+                        - 'set number'
+                        - 'set wrap'
+                        - 'syntax on'
+
+
+                    - name: Install ufw
+                        apt:
+                        name: ufw
+                        state: present
+
+                    - name: Configuring ufw
+                        ufw:
+                        direction: incoming
+                        policy: deny
+
+                    - name: Configuring ufw2
+                        ufw: 
+                        direction: outgoing
+                        policy: allow
+
+                    - name: Allow SSH
+                        ufw:
+                        rule: allow
+                        name: OpenSSH
+
+                    - name: Allow http and https
+                        ufw:
+                        rule: allow
+                        port: "{{ item }}"
+                        proto: tcp
+                        loop:
+                        - '80'
+                        - '443'
+
+                    - name: Enable ufw
+                        ufw:
+                        state: enabled
+
+
+                    ## SSH Configuration
+
+                    - name: Disable password authentication
+                        lineinfile:
+                        path: /etc/ssh/sshd_config
+                        state: present
+                        regexp: '^PasswordAuthentication'
+                        line: 'PasswordAuthentication no'
+
+                    - name: SSH Restart
+                        shell: service ssh restart
+                        async: 10
+                        poll: 0
+
+                - Save and exit
+
+### 2) Ansible Roles for Lab Management:
+
+                - cd /etc/ansible
+                - mkdir roles
+                - cd roles
+                - ansible-galaxy role init lab-base
+                - ansible-galaxy role init student-workstation
+                - cd lab-base
+                - vi tasks/main.yml
+
+                      - name: Install updates
+                        apt:
+                            upgrade: dist
+                            update_cache: yes
+
+                      - name: Configure timezone
+                        timezone:
+                            name: "{{ timezone }}"
+
+                      - name: Set Hostname
+                        hostname:
+                            name: "{{ hostname }}"
+
+                      - name: Intall Netdata (monitoring tool)
+                        apt:
+                            name: netdata
+                            state: present
+                
+                - Save and exit (define the variables in vars/main.yml)
+
+                - cd /etc/ansible/roles/student-workstation
+                - vi taks/main.yml (referred vs code installion from https://github.com/gantsign/ansible-role-visual-studio-code/tree/master)
+
+
+                - name: Create student account
+                user:
+                    name: "{{ student_user }}"
+                    shell: /bin/bash
+                    state: present
+                    create_home: yes #Creates home directory for the student user
+
+                - name: Install development tools
+                  apt:
+                    name: "{{ development_packages }}"
+                    state: present
+
+                - name: Install dependencies (apt)
+                  apt:
+                    name:
+                    - ca-certificates
+                    - apt-transport-https
+                    state: present
+
+                - name: Create APT keyrings dir
+                  become: true
+                  file:
+                    path: '/etc/apt/keyrings'
+                    state: directory
+                    mode: 'u=rwx,go=rx'
+
+                - name: Install key (apt)
+                  become: true
+                  get_url:
+                    url: '{{ visual_studio_code_mirror }}/keys/microsoft.asc'
+                    dest: '/etc/apt/keyrings/'
+                    mode: 'u=rw,go=r'
+                    force: true
+
+                - name: Add VSCode repository
+                  apt_repository:
+                    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.asc] {{ visual_studio_code_mirror }}/repos/code stable main"
+                    state: present
+                    filename: vscode
+
+                - name: Update apt cache after adding VSCode repo
+                  apt:
+                    update_cache: yes
+                when: ansible_facts['os_family'] == "Debian"
+
+                - name: Install VSCode
+                  apt:
+                    name: code
+                    state: present
+                    update_cache: yes
+
+
+                -- Save and exit
+
+# OPTIONAL TASKS
+
+## Task 1): Load Balancer Setup
+
+            - Download the app or set up the app(python code)
+            - (Make sure u installed python3 and set up)
+            - python3 app.py 8080 &
+            - python3 app.py 8081 &
+            - python3 app.py 8082 &
+            - python3 app.py 8083 & (& makes the app run in backgound)
+
+            - vi /etc/nginx/sites-available/sanin_ssl
+
+                # add new upstream backend server outside server block
+
+                upstream backend {
+                server 127.0.0.1:8080;
+                server 127.0.0.1:8081;
+                server 127.0.0.1:8082;
+                server 127.0.0.1:8083;
+                }
+
+                # add new location path in server block
+
+                location /loadBalancer/ {
+                    proxy_pass http://backend;
+                }
+            - Save and exit
+            - sudo nginx -t
+            - sudo systemctl reload nginx
+            - (Load balancer is running successfully)
+
+
+## Task 2): Advanced Docker Containerization
+
+### 1. Nextcloud Containerization Project:
+
+            - sudo mkdir -p /nextcloud
+            - cd /nextcloud
+            - sudo mkdir proxy
+            - sudo vi proxy/Dockerfile
+
+                    FROM nginxproxy/nginx-proxy:alpine
+
+                    Save and exit
+            
+            - sudo wget https://git.pimylifeup.com/compose/nextcloud/.env (reference from a youtube video)
+            - sudo nano .env
+
+                    MYSQL_PASSWORD=<set-your-password>
+                    STORAGE_LOCATION=/nextcloud/data
+                    DOMAIN_NAME=blest.sslnitc.site (your domain name)
+                    LETS_ENCRYPT_EMAIL=<your-email>
+
+            - sudo wget https://git.pimylifeup.com/compose/nextcloud/signed/compose.yaml
+
+            - Go through the file and understand the workflow of the services
+
+            - docker compose up -D
+
+            - Your Nextcloud server is successfully running on port 80
+
+            (Make sure to disable the portfolio website nginx before running this conatiner , this makes sure nextcloud server can run on the domain port 80 successfully)
+            
+
+
+
+
+
