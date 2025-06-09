@@ -1,7 +1,7 @@
 
 # SSL Admin Tasks
 
-This doc consists of all the tasks i have done, and the step by step process and documentation of each task.
+This doc consists of all the tasks i have done, and the documentation of each task.
 
 Optional tasks at the end.
 
