@@ -176,6 +176,38 @@ Future implementations that can be done:
 
             - su - examdmin
             - nano backup_exam.sh
+	    	#!/bin/bash
+
+		BACKUP_DIR="/home/examadmin/backups"
+		DATE=$(date +%Y%m%d)
+		LOG_FILE="$BACKUP_DIR/backup_$DATE.log"
+		
+		check_user() {
+		    if ! id -u "examadmin" &>/dev/null; then
+		        echo "This script is only accessible to examadmin!" | tee -a "$LOG_FILE"
+		        exit 1
+		    fi
+		}
+		
+		
+		backup_users() {
+		    mkdir -p "$BACKUP_DIR"
+		    echo "Backup started at $(date)" >> "$LOG_FILE"
+		
+		    for dir in /home/exam_*; do
+		        if [ -d "$dir" ]; then
+		            user=$(basename "$dir")
+		            tar -czf "$BACKUP_DIR/${user}_$DATE.tar.gz" "$dir" 2>>"$LOG_FILE"
+		            echo "Backed up $user directory" >> "$LOG_FILE"
+		        fi
+		    done
+		
+		    echo "Backup completed at $(date)" >> "$LOG_FILE"
+		}
+		
+		check_user
+		backup_users
+
             - chmod 700 backup_exam.sh
             - ./backup_exam.sh
 
