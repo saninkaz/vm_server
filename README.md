@@ -293,7 +293,7 @@ Future implementations that can be done:
 
             Add lines -
                 add_header X-XSS-Protection "1; mode=block";
-                add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline';";
+                add_header Content-Security-Policy "default-src 'self'; script-src 'self';";
 
             under http block in nginx.conf file
 
