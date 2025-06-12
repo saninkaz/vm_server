@@ -785,7 +785,7 @@ Future implementations that can be done:
 
             - Go through the file and understand the workflow of the services
 
-            - docker compose up -D
+            - docker compose up -d
 
             - Your Nextcloud server is successfully running on port 80
 
